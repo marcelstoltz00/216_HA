@@ -102,7 +102,7 @@ class FF_API
             $this->response(false, "DB connection failed.");
             return null;
         }
-        $stuur_sql = "SELECT product_id, quantity FROM u24566552_carts WHERE customer_id = ?";
+        $stuur_sql = "SELECT product_id, quantity FROM Carts WHERE customer_id = ?";
         $stelling = $this->conndb->prepare($stuur_sql);
     
         if ($stelling === false) {
@@ -145,7 +145,7 @@ class FF_API
             return null;
         }
     
-        $sql_vir_orders = "SELECT order_id, state, delivery_date, created_at FROM u24566552_orders WHERE customer_id = ?";
+        $sql_vir_orders = "SELECT order_id, state, delivery_date, created_at FROM Orders WHERE customer_id = ?";
         $stmtOrders = $this->conndb->prepare($sql_vir_orders);
     
         if ($stmtOrders === false) {
@@ -182,7 +182,7 @@ class FF_API
         }
     
         $stel_in = implode(',', array_fill(0, count($orderIds), '?'));
-        $sqlOrderPr = "SELECT order_id, product_id, quantity FROM u24566552_order_products WHERE order_id IN ($stel_in)";
+        $sqlOrderPr = "SELECT order_id, product_id, quantity FROM Order_products WHERE order_id IN ($stel_in)";
         $stmtOrPr = $this->conndb->prepare($sqlOrderPr);
     
         if ($stmtOrPr === false) {
@@ -219,6 +219,106 @@ class FF_API
     }
 
 
+    public function checkAmount($apikey): bool
+    {
+
+
+        if (! $this->conndb) {
+            $this->response(false, "DB connection failed.");
+            return null;
+        }
+        $stuur_sql = "SELECT cart_amount FROM Users WHERE api_key = ?";
+        $stelling = $this->conndb->prepare($stuur_sql);
+
+        if ($stelling === false) {
+
+            $this->response(false, "Internal error.", [], 500);
+            return null;
+        }
+
+        $stelling->bind_param("s", $apikey);
+
+        if ($stelling->execute()) {
+         
+                $resultaat = $stelling->get_result();
+        
+                if ($resultaat && $resultaat->num_rows > 0) {
+                    $row = $resultaat->fetch_assoc();
+                    $cartAmount = $row['cart_amount'];
+        
+                    error_log("amount:".$cartAmount);
+        
+                    if ($cartAmount <= 6) {
+                        $resultaat->free();
+                        $stelling->close();
+                        return true;
+                    } else {
+                        $resultaat->free();
+                        $stelling->close();
+                        return false;
+                    }
+                } else {
+                    $stelling->close();
+                    return false;
+                }
+            
+
+
+        } else {
+            error_log("DB execute error (get cart): " . $stelling->error);
+            $stelling->close();
+            $this->response(false, "Internal error.", [], 500);
+            return null;
+        }
+
+
+
+
+    }
+
+    public function increaseAmount($apikey): bool
+    {
+        if (! $this->conndb) {
+            $this->response(false, "DB connection failed.");
+            return false;
+        }
+
+        $amount = 1;
+      
+
+        $stuur_sql = "UPDATE Users SET cart_amount = cart_amount + ? WHERE api_key = ?";
+        $stelling = $this->conndb->prepare($stuur_sql);
+
+        if ($stelling === false) {
+            error_log("DB prepare error (increase cart): " . $this->conndb->error);
+            $this->response(false, "Internal error.", [], 500);
+            return false;
+        }
+
+        $stelling->bind_param("is", $amount, $apikey);
+
+        if ($stelling->execute()) {
+            $affected_rows = $stelling->affected_rows;
+
+            $stelling->close();
+
+            if ($affected_rows > 0) {
+                return true;
+            } else {
+                return false;
+            }
+
+        } else {
+            error_log("DB execute error (increase cart): " . $stelling->error);
+            $stelling->close();
+            $this->response(false, "Internal error.", [], 500);
+            return false;
+        }
+    }
+
+
+
+
 
 
 public function cart(array $data): void
@@ -241,11 +341,27 @@ public function cart(array $data): void
     $boodskap = "";
 
     if ($action === 'add') {
+        if ($this->checkAmount($apiKey)===true){
+            $stuur_sql = "INSERT INTO Carts (customer_id, product_id, quantity, created_at) VALUES (?, ?, 1, NOW()) ON DUPLICATE KEY UPDATE quantity = quantity + 1";
+            $boodskap = "Product added to cart.";
+        $this->increaseAmount($apiKey);
    
-        $stuur_sql = "INSERT INTO u24566552_carts (customer_id, product_id, quantity, created_at) VALUES (?, ?, 1, NOW()) ON DUPLICATE KEY UPDATE quantity = quantity + 1";
-        $boodskap = "Product added to cart.";
+
+        }else
+        {
+
+            $this->response(false, "Cart Max Capacity", [], 409);
+            return;
+    
+        }
+
+   
+  
+
+
+
     } else { 
-        $stuur_sql = "DELETE FROM u24566552_carts WHERE customer_id = ? AND product_id = ?";
+        $stuur_sql = "DELETE FROM Carts WHERE customer_id = ? AND product_id = ?";
         $boodskap = "Product removed from cart.";
     }
 
@@ -300,7 +416,7 @@ public function placeOrder(array $data): void
     try {
 
         $item_treasure_chest = [];
-        $sql_getC = "SELECT product_id, quantity FROM u24566552_carts WHERE customer_id = ?";
+        $sql_getC = "SELECT product_id, quantity FROM Carts WHERE customer_id = ?";
         $_sql_stmnt = $this->conndb->prepare($sql_getC);
 
         if ($_sql_stmnt === false) {
@@ -328,7 +444,7 @@ public function placeOrder(array $data): void
         $state = "Storage"; 
         $deliveryDate = "2025-05-19"; 
 
-        $sqlIO = "INSERT INTO u24566552_orders (customer_id, state, delivery_date, created_at) VALUES (?, ?, ?, NOW())";
+        $sqlIO = "INSERT INTO Orders (customer_id, state, delivery_date, created_at) VALUES (?, ?, ?, NOW())";
         $stmntIO = $this->conndb->prepare($sqlIO);
 
          if ($stmntIO === false) {
@@ -341,7 +457,7 @@ public function placeOrder(array $data): void
         $stmntIO->close();
 
       
-        $sqlIOP = "INSERT INTO u24566552_order_products (order_id, product_id, quantity) VALUES (?, ?, ?)";
+        $sqlIOP = "INSERT INTO Order_products (order_id, product_id, quantity) VALUES (?, ?, ?)";
         $stmtIOP = $this->conndb->prepare($sqlIOP);
 
       
@@ -355,7 +471,7 @@ public function placeOrder(array $data): void
 
 
 
-        $sql_leeg = "DELETE FROM u24566552_carts WHERE customer_id = ?";
+        $sql_leeg = "DELETE FROM Carts WHERE customer_id = ?";
         $stmtn_leeg = $this->conndb->prepare($sql_leeg);
 
    
@@ -746,45 +862,6 @@ public function placeOrder(array $data): void
 
 
 
-
-
-    private function convertPricesToRand($produkte): array
-    {
-
-        $RatesInfo = $this->getCurrencyRates();
-
-        if (! $RatesInfo || ! isset($RatesInfo['data'])) {
-
-            return $produkte;
-        }
-        $rates = $RatesInfo['data'];
-        foreach ($produkte as &$produk) {
-
-            $currency = isset($produk['currency']) ? $produk['currency'] : 'USD';
-
-            if ($currency === 'ZAR') {
-                continue;
-            }
-
-            if (! isset($rates[$currency])) {
-                continue;
-            }
-
-            $currencyToZarRate = $rates['ZAR'] / $rates[$currency];
-
-            if (isset($produk['initial_price'])) {
-                $produk['initial_price'] = $this->convertToRand($produk['initial_price'], $currencyToZarRate);
-            }
-
-            if (isset($produk['final_price'])) {
-                $produk['final_price'] = $this->convertToRand($produk['final_price'], $currencyToZarRate);
-            }
-
-            $produk['currency'] = 'ZAR';
-        }
-
-        return $produkte;
-    }
 
  
     public function response($success, $boodskap = "", $data = "", $statusCode = null)
