@@ -246,7 +246,7 @@ class FF_API
                     $row = $resultaat->fetch_assoc();
                     $cartAmount = $row['cart_amount'];
         
-                    error_log("amount:".$cartAmount);
+                    // error_log("amount:".$cartAmount);
         
                     if ($cartAmount <= 6) {
                         $resultaat->free();
@@ -392,10 +392,6 @@ public function cart(array $data): void
 }
 
 
-
-
-   
-
 public function placeOrder(array $data): void
 {
     if (! $this->conndb) {
@@ -406,15 +402,19 @@ public function placeOrder(array $data): void
     $apiKey = $data['api_key'] ?? null;
 
     if (empty($apiKey)) {
-   
+        $this->response(false, "API key missing.", [], 401);
         return;
     }
 
 
+    $deliveryDate = date('Y-m-d', strtotime('+2 days'));
+    $LA = $data['destination_latitude'];
+    $LO = $data['destination_longitude'];
+    $state = "Storage";
+
     $this->conndb->begin_transaction();
 
     try {
-
         $item_treasure_chest = [];
         $sql_getC = "SELECT product_id, quantity FROM Carts WHERE customer_id = ?";
         $_sql_stmnt = $this->conndb->prepare($sql_getC);
@@ -440,56 +440,114 @@ public function placeOrder(array $data): void
         $resultattt->free();
         $_sql_stmnt->close();
 
-   
-        $state = "Storage"; 
-        $deliveryDate = "2025-05-19"; 
+        $maxRetries = 5;
+        $orderId = null;
+        $trackingNum = '';
+        $generatedAndInserted = false;
 
-        $sqlIO = "INSERT INTO Orders (customer_id, state, delivery_date, created_at) VALUES (?, ?, ?, NOW())";
-        $stmntIO = $this->conndb->prepare($sqlIO);
+        for ($i = 0; $i < $maxRetries; $i++) {
+            $hash = hash('sha256', $apiKey . microtime(true) . $i . rand());
+            $randomPart = substr(str_shuffle("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"), 0, 3);
+            $trackingNum = "CS-" . substr($hash, 0, 4) . $randomPart;
 
-         if ($stmntIO === false) {
-             throw new Exception("DB prepare insert order error: " . $this->conndb->error);
-         }
+             if (strlen($trackingNum) !== 10) {
+                  continue;
+             }
 
-        $stmntIO->bind_param("sss", $apiKey, $state, $deliveryDate);
-        $stmntIO->execute();
-        $orderId = $this->conndb->insert_id;
-        $stmntIO->close();
+            $sqlIO = "INSERT INTO Orders (customer_id, state, delivery_date, created_at, tracking_num, destination_latitude, destination_longitude) VALUES (?, ?, ?, NOW(), ?, ?, ?)";
+            $stmntIO = $this->conndb->prepare($sqlIO);
 
-      
+            if ($stmntIO === false) {
+                 throw new Exception("DB prepare insert order error: " . $this->conndb->error);
+            }
+
+            $bindTypes = "ssssdd";
+            $stmntIO->bind_param($bindTypes, $apiKey, $state, $deliveryDate, $trackingNum, $LA, $LO);
+
+            if ($stmntIO->execute()) {
+                $orderId = $this->conndb->insert_id;
+                $stmntIO->close();
+                $generatedAndInserted = true;
+                break;
+            } else {
+                if ($this->conndb->errno === 1062) {
+                    error_log("Duplicate tracking number generated: " . $trackingNum . ". Retrying...");
+                    $stmntIO->close();
+                } else {
+                    $errorMsg = "DB execute insert order error: " . $stmntIO->error;
+                    $stmntIO->close();
+                    throw new Exception($errorMsg);
+                }
+            }
+        }
+
+        if (!$generatedAndInserted || $orderId === null) {
+            throw new Exception("Failed to generate and insert a unique tracking number after " . $maxRetries . " retries. Possible high collision rate or DB issue.");
+        }
+
         $sqlIOP = "INSERT INTO Order_products (order_id, product_id, quantity) VALUES (?, ?, ?)";
         $stmtIOP = $this->conndb->prepare($sqlIOP);
 
-      
+        if ($stmtIOP === false) {
+             throw new Exception("DB prepare insert order products error: " . $this->conndb->error);
+        }
 
         foreach ($item_treasure_chest as $item) {
             $stmtIOP->bind_param("iii", $orderId, $item['product_id'], $item['quantity']);
-            $stmtIOP->execute();
-
+            if (!$stmtIOP->execute()) {
+                $errorMsg = "DB execute insert order product error for product ID " . $item['product_id'] . ": " . $stmtIOP->error;
+                $stmtIOP->close();
+                throw new Exception($errorMsg);
+            }
         }
         $stmtIOP->close();
-
-
 
         $sql_leeg = "DELETE FROM Carts WHERE customer_id = ?";
         $stmtn_leeg = $this->conndb->prepare($sql_leeg);
 
-   
+        if ($stmtn_leeg === false) {
+             throw new Exception("DB prepare delete cart error: " . $this->conndb->error);
+        }
+
         $stmtn_leeg->bind_param("s", $apiKey);
-        $stmtn_leeg->execute();
+        if (!$stmtn_leeg->execute()) {
+             $errorMsg = "DB execute delete cart error: " . $stmtn_leeg->error;
+             $stmtn_leeg->close();
+             throw new Exception($errorMsg);
+        }
         $stmtn_leeg->close();
 
-
         $this->conndb->commit();
-        $this->response(true, "Order placed successfully.", ['order_id' => $orderId], 200);
+        $this->response(true, "Order placed successfully.", ['order_id' => $orderId, 'tracking_number' => $trackingNum], 200);
+
+        $amount = 0;
+      
+
+        $stuur_sql = "UPDATE Users SET cart_amount = ? WHERE api_key = ?";
+        $stelling = $this->conndb->prepare($stuur_sql);
+     
+
+        $stelling->bind_param("is", $amount, $apiKey);
+
+    $stelling->execute();
+
+
+
 
     } catch (Exception $e) {
-        
         $this->conndb->rollback();
         error_log("Order placement failed: " . $e->getMessage());
-        $this->response(false, "Failed to place order.", [], 500);
+
+        $errorMessage = (strpos($e->getMessage(), "DB") === 0 || strpos($e->getMessage(), "Failed to generate") === 0)
+                        ? "Failed to place order due to an internal issue."
+                        : $e->getMessage();
+
+        $this->response(false, $errorMessage, [], 500);
     }
 }
+
+
+   
 
 
 
