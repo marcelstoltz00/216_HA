@@ -590,23 +590,10 @@ public function placeOrder(array $data): void
 
         try {
 
-            $limit = isset($data['limit']) ? max(1, min(500, intval($data['limit']))) : 50;
+            $af = ['id', 'title', 'brand', 'manufacturer', 'department'];
+            $search=$data["id"];
+            $limit=$data["limit"];
 
-            $sort = isset($data['sort']) ? $data['sort'] : 'id';
-
-            $af = ['id', 'title', 'brand', 'initial_price', 'final_price',
-                'date_first_available', 'manufacturer', 'department'];
-
-            if (! in_array($sort, $af)) {
-                $this->response(false, "Invalid 'sort' fields.");
-                return;
-            }
-
-            $order = isset($data['order']) ? strtoupper($data['order']) : 'ASC';
-            if ($order !== 'ASC' && $order !== 'DESC') {
-                $this->response(false, "Invalid 'order' field.");
-                return;
-            }
 
             $keysreturn = isset($data['return']) ? $data['return'] : ['*'];
             if ($keysreturn === '*') {
@@ -624,10 +611,10 @@ public function placeOrder(array $data): void
                 }
             }
 
-            $fuzzy    = isset($data['fuzzy']) ? $data['fuzzy'] : true;
-            $search   = isset($data['search']) && $this->checkSoek($data['search']) ? $data['search'] : null;
-            $products = $this->queryProducts($keysreturn, $search, $fuzzy, $sort, $order, $limit);
-            $products = $this->convertPricesToRand($products);
+     
+       
+            $products = $this->queryProducts($keysreturn, $search, $limit);
+   
 
             $this->response(true, "Success", $products);
 
@@ -637,39 +624,9 @@ public function placeOrder(array $data): void
         }
     }
 
-    public function checkSoek($search): bool
-    {
-        $magDieWees = [
-            'id',
-            'title',
-            'brand',
-            'categories',
-            'department',
-            'manufacturer',
-            'features',
-            'price_min',
-            'price_max',
-        ];
+  
 
-        if (is_null($search) || empty($search)) {
-            return true;
-        }
-
-        if (! is_array($search)) {
-            return false;
-        }
-
-        foreach ($search as $kolom => $searchTerm) {
-            if (! in_array($kolom, $magDieWees)) {
-                return false;
-            }
-
-        }
-
-        return true;
-    }
-
-    private function queryProducts($awaitReturn, $search, $fuzzy, $sort, $order, $limit): array
+    private function queryProducts($awaitReturn, $search, $limit): array
     {
 
         $sql_statementtt = "SELECT ";
@@ -681,28 +638,18 @@ public function placeOrder(array $data): void
             if (! in_array('id', $awaitReturn)) {
                 $awaitReturn[] = 'id';
             }
-            if (! in_array('initial_price', $awaitReturn) && ! in_array('final_price', $awaitReturn)) {
-                $awaitReturn[] = 'initial_price';
-                $awaitReturn[] = 'final_price';
-            }
 
             $magwees = [
                 'id',
                 'title',
                 'brand',
-                'description',
-                'initial_price',
-                'final_price',
                 'categories',
                 'image_url',
                 'product_dimensions',
-                'date_first_available', 'currency',
                 'manufacturer',
                 'department',
-                'features',
                 'is_available',
-                'images',
-                'country_of_origin',
+             
             ];
             $maakSkoone = array_filter($awaitReturn, function ($field) use ($magwees) {
                 return in_array($field, $magwees);
@@ -715,47 +662,16 @@ public function placeOrder(array $data): void
             $sql_statementtt .= implode(', ', $maakSkoone);
         }
 
-        $sql_statementtt .= " FROM products WHERE 1=1";
+        $sql_statementtt .= " FROM Products WHERE 1=1";
 
         $kategorie = [];
         $tipes     = '';
 
-        if ($search) {
-            foreach ($search as $kolom => $value) {
+       $sql_statementtt.="WHERE id =";
+       $sql_statementtt.=$search["id"];
 
-                $magDieWees = ['id', 'title', 'categories', 'brand', 'manufacturer', 'department', 'features', 'price_min', 'price_max'];
-                if (! in_array($kolom, $magDieWees)) {
-                    throw new Exception("Invalid search kolom: $kolom");
-                }
 
-                if ($kolom === 'price_min') {
-                    $sql_statementtt .= " AND final_price >= ?";
-                    $kategorie[] = $value;
-                    $tipes .= 'd';
-                } elseif ($kolom === 'price_max') {
-                    $sql_statementtt .= " AND final_price <= ?";
-                    $kategorie[] = $value;
-                    $tipes .= 'd';
-                } else {
-                    if ($fuzzy) {
-                        $sql_statementtt .= " AND $kolom LIKE ?";
-                        $value = "%" . $value . "%";
-                    } else {
-                        $sql_statementtt .= " AND $kolom = ?";
-                    }
-                    $kategorie[] = $value;
-                    $tipes .= 's'; // 's' for strin
-                }
-
-            }
-        }
-
-        $laatDieToe = ['id', 'title', 'brand', 'initial_price', 'final_price', 'date_first_available', 'manufacturer', 'department'];
-        if (! in_array($sort, $laatDieToe)) {
-            throw new Exception("Invalid sort kolom: $sort");
-        }
-        $sql_statementtt .= " ORDER BY $sort $order";
-
+    
         $sql_statementtt .= " LIMIT ?";
         $kategorie[] = $limit;
         $tipes .= 'i';
@@ -779,24 +695,7 @@ public function placeOrder(array $data): void
             }
 
             $sqlQuery->close();
-            if (isset($search['price_min']) || isset($search['price_max'])) {
-                $minPrice = isset($search['price_min']) ? $search['price_min'] : 0;
-                $maxPrice = isset($search['price_max']) ? $search['price_max'] : 0;
-
-                $products = array_filter($products, function ($produk) use ($minPrice, $maxPrice) {
-                    $price = $produk['final_price'];
-
-                    if ($minPrice !== null && $price < $minPrice) {
-                        return false;
-                    }
-
-                    if ($maxPrice !== null && $price > $maxPrice) {
-                        return false;
-                    }
-
-                    return true;
-                });
-            }
+     
 
             $products = array_map(function ($produk) {
                 unset($produk['created_at'], $produk['updated_at']);
@@ -814,19 +713,12 @@ public function placeOrder(array $data): void
             'id',
             'title',
             'brand',
-            'description',
-            'initial_price',
-            'final_price',
             'categories',
             'image_url',
             'product_dimensions',
-            'date_first_available', 'currency',
-            'manufacturer',
-            'department',
-            'features',
             'is_available',
-            'images',
-            'country_of_origin',
+            'manufacturer',
+            'department'
         ];
 
         if (in_array('*', $keysreturn) || (is_string($keysreturn) && $keysreturn === '*')) {
