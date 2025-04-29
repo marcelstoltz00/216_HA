@@ -57,6 +57,7 @@ class FF_API
         }
     }
 
+
     public function login($email, $password)
     {
         if (! $this->conndb) {
@@ -218,76 +219,7 @@ class FF_API
         return $ordersList;
     }
 
-    /*
-    Functions to implement
-    • CreateDrone - Adds a new drone to the database.
-    • UpdateDrone - Updates the relevant fields in the Drones table.
-    – current operator id
-    – is available
-    – latest latitude
-    – latest longitude
-    – altitude
-    – battery level
-    • GetAllDrones - Returns all drones in the database.
 
-
-    8.2.5 Drones
-    This table will contain information about the drones:
-    • id
-    • current operator id (null or references a userId in the Users table)
-    • is available
-    • latest latitude
-    • latest longitude
-    • altitude
-    • battery level
-    */
-
-    public function CreateDrone(array $data) : void{
-        if (! $this->conndb) {
-            $this->response(false, "DB connection failed.", [], 500);
-            return;
-        }
-
-        $current_operator_id = $data['current_operator_id'] ?? null;
-        $is_available = isset($data['is_available']) ? ($data['is_available'] ? 1 : 0) : 1;
-        $latest_latitude = $data['latest_latitude'] ?? null;
-        $latest_longitude = $data['latest_longitude'] ?? null;
-        $altitude = $data['altitude'] ?? null;
-        $battery_level = $data['battery_level'] ?? null;
-
-        //net is_available kan nie null wees nie (want id is auto increment)
-        if (!isset($is_available)){
-            $this->response(false, "Drone data is missing", [], 400);
-            return;
-        }
-
-        $sqlStatement = "INSERT INTO Drones (current_operator_id, is_available, latest_latitude, latest_longitude, altitude, battery_level) VALUES (?, ?, ?, ?, ?, ?)";
-
-        $stmt = $this->conndb->prepare($sqlStatement);
-
-        //check if sql is faulty
-        if ($stmt === false){
-            $this->response(false, "SQL statement invalid", [], 500);
-            return;
-        }
-
-        $stmt->bind_param(
-            //hoe werk auto increment van ons kant af?
-            "iidddd", 
-            $current_operator_id, $is_available, $latest_latitude, $latest_longitude, $altitude, $battery_level
-        );
-
-        if ($stmt->execute()){
-            $stmt->close();
-            $this->response(true, "Drone created successfully.", [], 200);
-        }else{
-            error_log("Database error " . $stmt->error);
-            $stmt->close();
-            $this->response(false, "Error, drone not created.", [], 500);
-        }
-
-    }
-  
     public function checkAmount($apikey): bool
     {
 
@@ -387,118 +319,6 @@ class FF_API
 
 
 
-    public function UpdateDrone(array $data) : void{
-        if (! $this->conndb){
-            $this->response(false, "DB connection failed.", [], 500);
-            return;
-        }
-    
-        $id = $data['id'] ?? null;
-        if (empty($id)){
-            $this->response(false, "Drone ID required.", [], 400);
-            return;
-        }
-    
-        $fields = [];
-        $values = [];
-        $types = "";
-
-        if (isset($data['current_operator_id'])){
-            $fields[] = "current_operator_id = ?";
-            $values[] = $data['current_operator_id'];
-            $types .= "i";
-        }
-        
-        if (isset($data['is_available'])){
-            $fields[] = "is_available = ?";
-            $values[] = $data['is_available'] ? 1 : 0;
-            $types .= "i";
-        }
-        
-        if (isset($data['latest_latitude'])){
-            $fields[] = "latest_latitude = ?";
-            $values[] = $data['latest_latitude'];
-            $types .= "d";
-        }
-        
-        if (isset($data['latest_longitude'])){
-            $fields[] = "latest_longitude = ?";
-            $values[] = $data['latest_longitude'];
-            $types .= "d";
-        }
-        
-        if (isset($data['altitude'])){
-            $fields[] = "altitude = ?";
-            $values[] = $data['altitude'];
-            $types .= "d";
-        }
-        
-        if (isset($data['battery_level'])){
-            $fields[] = "battery_level = ?";
-            $values[] = $data['battery_level'];
-            $types .= "d";
-        }
-        
-        if (empty($fields)){
-            $this->response(false, "No fields to update", [], 400);
-            return;
-        }
-
-        $sqlStatement = "UPDATE Drones SET " . implode(', ', $fields) . " WHERE id = ?";
-        $stmt = $this->conndb->prepare($sqlStatement);
-        
-        if ($stmt === false) {
-            $this->response(false, "SQL statement preparation failed", [], 500);
-            return;
-        }
-
-
-
-        $values[] = $id;
-        $types .= "i";
-
-        $stmt->bind_param($types, ...$values);
-        
-        if ($stmt->execute()){
-            $stmt->close();
-            $this->response(true, "Drone updated successfully.", [], 200);
-        }else{
-            error_log("Database error " . $stmt->error);
-            $stmt->close();
-            $this->response(false, "Error updating drone.", [], 500);
-        }
-    }
-
-    public function GetAllDrones() : void{
-        if (! $this->conndb){
-            $this->response(false, "DB connection failed.", [], 500);
-            return;
-        }
-    
-        $sqlStatement = "SELECT * FROM Drones";
-        $result = $this->conndb->query($sqlStatement);
-    
-        if ($result === false){
-            $this->response(false, "SQL query faulty", [], 500);
-            return;
-        }
-    
-        $drones = [];
-
-        $drones = array();
-
-        while (true){
-            $row = $result->fetch_assoc();
-
-            if ($row === null){
-                break;
-            }
-
-            $drones[] = $row;
-        }
-    
-        $this->response(true, "Drones data retrieved successfully", $drones, 200);
-    }
 
 
 
@@ -873,6 +693,7 @@ public function placeOrder(array $data): void
                 $_COOKIE['loggedIn'] = true;
                 $_COOKIE['username'] = $data['name'];
                 $_COOKIE['apiKey']   = $FF_key;
+             
 
             } else {
                 header("HTTP/1.1 500 Internal Server Error");
@@ -944,10 +765,10 @@ public function placeOrder(array $data): void
 
         $apiKey = trim(substr($authHeader, 7));
 
-        // if (! $this->checkApi4key($apiKey)) {
-        //     $this->response(false, "Invalid API key");
-        //     return;
-        // }
+        if (! $this->checkApi4key($apiKey)) {
+            $this->response(false, "Invalid API key");
+            return;
+        }
 
         try {
             $defaultLimit = 50;
@@ -1097,7 +918,204 @@ public function placeOrder(array $data): void
     }
   
 
- 
+
+
+
+   
+
+
+    /*
+    Functions to implement
+    • CreateDrone - Adds a new drone to the database.
+    • UpdateDrone - Updates the relevant fields in the Drones table.
+    – current operator id
+    – is available
+    – latest latitude
+    – latest longitude
+    – altitude
+    – battery level
+    • GetAllDrones - Returns all drones in the database.
+
+
+    8.2.5 Drones
+    This table will contain information about the drones:
+    • id
+    • current operator id (null or references a userId in the Users table)
+    • is available
+    • latest latitude
+    • latest longitude
+    • altitude
+    • battery level
+    */
+
+    public function CreateDrone(array $data) : void{
+        if (! $this->conndb) {
+            $this->response(false, "DB connection failed.", [], 500);
+            return;
+        }
+
+        $current_operator_id = $data['current_operator_id'] ?? null;
+        $is_available = isset($data['is_available']) ? ($data['is_available'] ? 1 : 0) : 1;
+        $latest_latitude = $data['latest_latitude'] ?? null;
+        $latest_longitude = $data['latest_longitude'] ?? null;
+        $altitude = $data['altitude'] ?? null;
+        $battery_level = $data['battery_level'] ?? null;
+
+        //net is_available kan nie null wees nie (want id is auto increment)
+        if (!isset($is_available)){
+            $this->response(false, "Drone data is missing", [], 400);
+            return;
+        }
+
+        $sqlStatement = "INSERT INTO Drones (current_operator_id, is_available, latest_latitude, latest_longitude, altitude, battery_level) VALUES (?, ?, ?, ?, ?, ?)";
+
+        $stmt = $this->conndb->prepare($sqlStatement);
+
+        //check if sql is faulty
+        if ($stmt === false){
+            $this->response(false, "SQL statement invalid", [], 500);
+            return;
+        }
+
+        $stmt->bind_param(
+            //hoe werk auto increment van ons kant af?
+            "iidddd", 
+            $current_operator_id, $is_available, $latest_latitude, $latest_longitude, $altitude, $battery_level
+        );
+
+        if ($stmt->execute()){
+            $stmt->close();
+            $this->response(true, "Drone created successfully.", [], 200);
+        }else{
+            error_log("Database error " . $stmt->error);
+            $stmt->close();
+            $this->response(false, "Error, drone not created.", [], 500);
+        }
+
+    }
+  
+
+
+
+    public function UpdateDrone(array $data) : void{
+        if (! $this->conndb){
+            $this->response(false, "DB connection failed.", [], 500);
+            return;
+        }
+    
+        $id = $data['id'] ?? null;
+        if (empty($id)){
+            $this->response(false, "Drone ID required.", [], 400);
+            return;
+        }
+    
+        $fields = [];
+        $values = [];
+        $types = "";
+
+        if (isset($data['current_operator_id'])){
+            $fields[] = "current_operator_id = ?";
+            $values[] = $data['current_operator_id'];
+            $types .= "i";
+        }
+        
+        if (isset($data['is_available'])){
+            $fields[] = "is_available = ?";
+            $values[] = $data['is_available'] ? 1 : 0;
+            $types .= "i";
+        }
+        
+        if (isset($data['latest_latitude'])){
+            $fields[] = "latest_latitude = ?";
+            $values[] = $data['latest_latitude'];
+            $types .= "d";
+        }
+        
+        if (isset($data['latest_longitude'])){
+            $fields[] = "latest_longitude = ?";
+            $values[] = $data['latest_longitude'];
+            $types .= "d";
+        }
+        
+        if (isset($data['altitude'])){
+            $fields[] = "altitude = ?";
+            $values[] = $data['altitude'];
+            $types .= "d";
+        }
+        
+        if (isset($data['battery_level'])){
+            $fields[] = "battery_level = ?";
+            $values[] = $data['battery_level'];
+            $types .= "d";
+        }
+        
+        if (empty($fields)){
+            $this->response(false, "No fields to update", [], 400);
+            return;
+        }
+
+        $sqlStatement = "UPDATE Drones SET " . implode(', ', $fields) . " WHERE id = ?";
+        $stmt = $this->conndb->prepare($sqlStatement);
+        
+        if ($stmt === false) {
+            $this->response(false, "SQL statement preparation failed", [], 500);
+            return;
+        }
+
+
+
+        $values[] = $id;
+        $types .= "i";
+
+        $stmt->bind_param($types, ...$values);
+        
+        if ($stmt->execute()){
+            $stmt->close();
+            $this->response(true, "Drone updated successfully.", [], 200);
+        }else{
+            error_log("Database error " . $stmt->error);
+            $stmt->close();
+            $this->response(false, "Error updating drone.", [], 500);
+        }
+    }
+
+    public function GetAllDrones() : void{
+        if (! $this->conndb){
+            $this->response(false, "DB connection failed.", [], 500);
+            return;
+        }
+    
+        $sqlStatement = "SELECT * FROM Drones";
+        $result = $this->conndb->query($sqlStatement);
+    
+        if ($result === false){
+            $this->response(false, "SQL query faulty", [], 500);
+            return;
+        }
+    
+        $drones = [];
+
+        $drones = array();
+
+        while (true){
+            $row = $result->fetch_assoc();
+
+            if ($row === null){
+                break;
+            }
+
+            $drones[] = $row;
+        }
+    
+        $this->response(true, "Drones data retrieved successfully", $drones, 200);
+    }
+
+
+
+
+
+
+   
     public function response($success, $boodskap = "", $data = "", $statusCode = null)
     {
 
