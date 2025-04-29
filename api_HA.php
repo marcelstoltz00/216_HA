@@ -518,7 +518,7 @@ public function placeOrder(array $data): void
                 $_COOKIE['loggedIn'] = true;
                 $_COOKIE['username'] = $data['name'];
                 $_COOKIE['apiKey']   = $FF_key;
-                $this->pref_table($FF_key);
+             
 
             } else {
                 header("HTTP/1.1 500 Internal Server Error");
@@ -542,46 +542,53 @@ public function placeOrder(array $data): void
 
 
 
+    private function checkApi4key($apiKey): bool
+    {
+        try {
+            $sqlQuery = $this->conndb->prepare("SELECT id FROM Users WHERE api_key = ?");
+            if ($sqlQuery === false) {
+
+                return false;
+            }
+            $sqlQuery->bind_param("s", $apiKey);
+            if ($sqlQuery->errno) {
+
+                $sqlQuery->close();
+                return false;
+            }
+            if ($sqlQuery->execute() === false) {
+
+                $sqlQuery->close();
+                return false;
+            }
+            $resultaat = $sqlQuery->get_result();
+            $sqlQuery->close();
+
+            return $resultaat->num_rows > 0;
+        } catch (mysqli_sql_exception $e) {
+
+            return false;
+        }
+    }
+
+
 
     public function getProducts($data): void
     {
-        //     $headers = getallheaders();
-        //   //  logApiActivity(['headers' => $headers], null, 'debug');
-
-        //     if (! isset($headers['Authorization'])) {
-        //         $this->response(false, "Missing Authorization header");
-        //         return;
-        //     }
-
-        //     $authHeader = $headers['Authorization'];
-        //     if (strpos($authHeader, 'Bearer ') !== 0) {
-        //         $this->response(false, "Invalid Authorization format");
-        //         return;
-        //     }
-
-        //     $apiKey = trim(substr($authHeader, 7));
-        //    // logApiActivity($data, ['extracted_api_key' => $apiKey], 'debug');
-        //     if (! $this->checkApi4key($apiKey)) {
-        //         $this->response(false, "Invalid API key");
-        //         return;
-        //     }
-
         $headers = getallheaders();
-        //  logApiActivity(['headers' => $headers], null, 'debug');
 
-        if (! isset($headers['X-Auth'])) {                // Changed header name to X-Auth
-            $this->response(false, "Missing X-Auth header"); // Updated error boodskap
+        if (! isset($headers['X-Auth'])) {
+            $this->response(false, "Missing X-Auth header");
             return;
         }
 
-        $authHeader = $headers['X-Auth']; // Changed variable name to reflect the new header
+        $authHeader = $headers['X-Auth'];
         if (strpos($authHeader, 'Bearer ') !== 0) {
-            $this->response(false, "Invalid X-Auth format"); // Updated error boodskap
+            $this->response(false, "Invalid X-Auth format");
             return;
         }
 
         $apiKey = trim(substr($authHeader, 7));
-        // logApiActivity($data, ['extracted_api_key' => $apiKey], 'debug');
 
         if (! $this->checkApi4key($apiKey)) {
             $this->response(false, "Invalid API key");
@@ -589,17 +596,16 @@ public function placeOrder(array $data): void
         }
 
         try {
+            $defaultLimit = 50;
 
-            $af = ['id', 'title', 'brand', 'manufacturer', 'department'];
-            $search=$data["id"];
-            $limit=$data["limit"];
+            $search = isset($data["id"]) && !empty($data["id"]) ? $data["id"] : null;
 
+            $limit = isset($data["limit"]) && is_numeric($data["limit"]) ? (int)$data["limit"] : $defaultLimit;
 
             $keysreturn = isset($data['return']) ? $data['return'] : ['*'];
             if ($keysreturn === '*') {
                 $keysreturn = ['*'];
             } else {
-
                 if (! is_array($keysreturn)) {
                     $this->response(false, "Invalid 'return' parameter format. Expected an array or '*' as a string.");
                     return;
@@ -611,10 +617,7 @@ public function placeOrder(array $data): void
                 }
             }
 
-     
-       
             $products = $this->queryProducts($keysreturn, $search, $limit);
-   
 
             $this->response(true, "Success", $products);
 
@@ -624,88 +627,89 @@ public function placeOrder(array $data): void
         }
     }
 
-  
 
-    private function queryProducts($awaitReturn, $search, $limit): array
+    private function queryProducts(array $awaitReturn, $search = null, int $limit): array
     {
+        $allowedFields = [
+            'id',
+            'title',
+            'brand',
+            'categories',
+            'image_url',
+            'product_dimensions',
+            'manufacturer',
+            'department',
+            'is_available',
+        ];
 
-        $sql_statementtt = "SELECT ";
+        $fieldsToSelect = [];
 
         if (in_array('*', $awaitReturn)) {
-            $sql_statementtt .= "* ";
+            $fieldsToSelect = $allowedFields;
         } else {
-
-            if (! in_array('id', $awaitReturn)) {
+            if (!in_array('id', $awaitReturn)) {
                 $awaitReturn[] = 'id';
             }
 
-            $magwees = [
-                'id',
-                'title',
-                'brand',
-                'categories',
-                'image_url',
-                'product_dimensions',
-                'manufacturer',
-                'department',
-                'is_available',
-             
-            ];
-            $maakSkoone = array_filter($awaitReturn, function ($field) use ($magwees) {
-                return in_array($field, $magwees);
+            $fieldsToSelect = array_filter($awaitReturn, function ($field) use ($allowedFields) {
+                return in_array($field, $allowedFields);
             });
 
-            if (empty($maakSkoone)) {
+            if (empty($fieldsToSelect)) {
                 throw new Exception("Invalid fields in 'return' parameter.");
             }
-
-            $sql_statementtt .= implode(', ', $maakSkoone);
         }
 
-        $sql_statementtt .= " FROM Products WHERE 1=1";
+        $sql_statementtt = "SELECT " . implode(', ', $fieldsToSelect) . " FROM Products";
 
+        $tipes = '';
         $kategorie = [];
-        $tipes     = '';
 
-       $sql_statementtt.="WHERE id =";
-       $sql_statementtt.=$search["id"];
-
-
-    
-        $sql_statementtt .= " LIMIT ?";
-        $kategorie[] = $limit;
-        $tipes .= 'i';
-
-        //    logApiActivity($sql_statementtt, "", "");
-
-        try {
-
-            $sqlQuery = $this->conndb->prepare($sql_statementtt);
-
-            if (! empty($kategorie)) {
-                $sqlQuery->bind_param($tipes, ...$kategorie);
-            }
-            //  logApiActivity($sqlQuery, "", "");
-            $sqlQuery->execute();
-            $resultaat = $sqlQuery->get_result();
-            $products  = [];
-
-            while ($rye = $resultaat->fetch_assoc()) {
-                $products[] = $rye;
-            }
-
-            $sqlQuery->close();
-     
-
-            $products = array_map(function ($produk) {
-                unset($produk['created_at'], $produk['updated_at']);
-                return $produk;
-            }, $products);
-            return $products;
-        } catch (mysqli_sql_exception $e) {
-            throw new Exception("Database query failed: " . $e->getMessage());
+        if (!empty($search)) {
+            $sql_statementtt .= " WHERE id = ?";
+            $tipes .= 'i';
+            $kategorie[] = $search;
         }
+
+        $sql_statementtt .= " LIMIT ?";
+        $tipes .= 'i';
+        $kategorie[] = $limit;
+
+        $sqlQuery = $this->conndb->prepare($sql_statementtt);
+
+        if ($sqlQuery === false) {
+            throw new Exception("Database prepare failed: " . $this->conndb->error);
+        }
+
+        if (!empty($kategorie)) {
+            $sqlQuery->bind_param($tipes, ...$kategorie);
+        }
+
+
+        $sqlQuery->execute();
+
+        $resultaat = $sqlQuery->get_result();
+
+        if ($resultaat === false) {
+             throw new Exception("Database query execution failed: " . $sqlQuery->error);
+        }
+
+        $products = [];
+
+        while ($rye = $resultaat->fetch_assoc()) {
+            $products[] = $rye;
+        }
+
+        $sqlQuery->close();
+
+        $products = array_map(function ($produk) {
+            unset($produk['created_at'], $produk['updated_at']);
+            return $produk;
+        }, $products);
+
+        return $products;
     }
+
 
     public function verifyAr(array $keysreturn): bool
     {
@@ -726,7 +730,7 @@ public function placeOrder(array $data): void
         }
 
         if (! is_array($keysreturn)) {
-            return false; // Handle cases where it's not an array or '*'
+            return false;
         }
 
         foreach ($keysreturn as $field) {
@@ -737,6 +741,12 @@ public function placeOrder(array $data): void
 
         return true;
     }
+  
+
+
+
+
+
 
     private function convertPricesToRand($produkte): array
     {
