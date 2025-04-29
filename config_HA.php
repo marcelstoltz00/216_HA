@@ -1,0 +1,11 @@
+<?php
+
+$WHEATLEY_STUDENTNUM = 'u24566552';
+$WHEATLEY_APIKEY = 'f698e349734402f1489fb9b03335902c';
+$WHEATLEY_BASEURL = 'https://wheatley.cs.up.ac.za/api_HA/';
+
+$DB_HOST = 'wheatley.cs.up.ac.za';
+$DB_USER = 'u24566552';
+$DB_PASS = 'FYGSU3CF43GF5CVFF5D7PYET3CKK7KBG';
+$DB_NAME = 'u24566552_u245645584_BuiltOnBiltong';
+
