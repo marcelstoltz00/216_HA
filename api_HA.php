@@ -393,6 +393,81 @@ public function cart(array $data): void
 }
 
 
+public function updateOrder(array $data): void
+{
+    
+    if (! $this->conndb) {
+        $this->response(false, "DB connection failed.", [], 500);
+        return;
+    }
+
+    $orderId = $data['tracking_num'] ?? null;
+    $LA = $data['destination_latitude'] ?? null;
+    $LO = $data['destination_longitude'] ?? null;
+    $state = $data['state'] ?? null;
+
+    if (empty($orderId)) {
+        $this->response(false, "Order ID is missing.", [], 400);
+        return;
+    }
+
+    $sqlDele = [];
+    $bind_tipes = '';
+    $bind_parammm = [];
+
+    if ($LA !== null) {
+        $sqlDele[] = "destination_latitude = ?";
+        $bind_tipes .= 'd';
+        $bind_parammm[] = $LA;
+    }
+
+    if ($LO !== null) {
+        $sqlDele[] = "destination_longitude = ?";
+        $bind_tipes .= 'd';
+        $bind_parammm[] = $LO;
+    }
+
+    if ($state !== null) {
+        $sqlDele[] = "state = ?";
+        $bind_tipes .= 's';
+        $bind_parammm[] = $state;
+    }
+
+    if (empty($sqlDele)) {
+         $this->response(false, "No fields provided for update (destination_latitude, destination_longitude, or state).", [], 400);
+         return;
+    }
+
+    $sql = "UPDATE Orders SET " . implode(', ', $sqlDele) . " WHERE tracking_num = ?";
+    $bind_tipes .= 's';
+    $bind_parammm[] = $orderId;
+
+    $this->conndb->begin_transaction();
+
+    $stmnt = $this->conndb->prepare($sql);
+
+ 
+
+    $bind_param_ref = [];
+    foreach ($bind_parammm as $key => $value) {
+        $bind_param_ref[$key] = &$bind_parammm[$key];
+    }
+
+    array_unshift($bind_param_ref, $bind_tipes);
+
+
+    if ($stmnt->affected_rows >= 0) {
+        $this->conndb->commit();
+        $stmnt->close();
+        $this->response(true, "Order updated successfully.", ['order_id' => $orderId], 200);
+    } else {
+        $this->conndb->rollback();
+        $stmnt->close();
+        $this->response(false, "No rows updated. Order ID might not exist or data is the same.", ['order_id' => $orderId], 200);
+    }
+}
+
+
 public function placeOrder(array $data): void
 {
     if (! $this->conndb) {
@@ -462,8 +537,8 @@ public function placeOrder(array $data): void
                  throw new Exception("DB prepare insert order error: " . $this->conndb->error);
             }
 
-            $bindTypes = "ssssdd";
-            $stmntIO->bind_param($bindTypes, $apiKey, $state, $deliveryDate, $trackingNum, $LA, $LO);
+            $bind_tipes = "ssssdd";
+            $stmntIO->bind_param($bind_tipes, $apiKey, $state, $deliveryDate, $trackingNum, $LA, $LO);
 
             if ($stmntIO->execute()) {
                 $orderId = $this->conndb->insert_id;
@@ -1192,6 +1267,10 @@ if (isset($data["type"])) {
                                     $api->getCart($data["api_key"]);
                                     exit;
                                 } else {
+                                    if ($data["type"] == "updateorders") {
+                                        $api->updateOrder($data);
+                                        exit;
+                                    } else {
                                     if ($data["type"] == "getorders") {
                                         $api->getOrders($data["api_key"]);
                                         exit;
@@ -1224,7 +1303,7 @@ if (isset($data["type"])) {
                                                 
                                             }
                                         }
-                                    }
+                                    }}
                                 }
                             }
                         }
