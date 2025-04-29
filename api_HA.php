@@ -1,6 +1,6 @@
 <?php
 session_start();
-require_once __DIR__ . 'config_HA.php';
+require_once __DIR__ . '/config_HA.php';
 
 $data = json_decode(file_get_contents("php://input"), true);
 
@@ -25,7 +25,7 @@ class FF_API
     private function __construct()
     {
 
-        require_once __DIR__ . 'config_HA.php';
+        require_once __DIR__ . '/config_HA.php';
 
         global $DB_HOST, $DB_USER, $DB_PASS, $DB_NAME, $WHEATLEY_STUDENTNUM, $WHEATLEY_APIKEY, $WHEATLEY_BASEURL;
 
@@ -438,7 +438,7 @@ public function placeOrder(array $data): void
             }
         }
 
-        if (! in_array(trim($data['user_type']), ["Customer", "Courier", "Inventory Manager"])) {
+        if (! in_array(trim($data['user_type']), ["Customer", "Courier", "Distributor"])) {
             $messages[] = "Invalid user_type";
         }
 
@@ -491,19 +491,20 @@ public function placeOrder(array $data): void
             $sout      = bin2hex(random_bytes(16));
             $hashed_pw = hash("sha512", $data['password'] . $sout);
             $FF_key    = bin2hex(random_bytes(16));
+            $amt=0;
 
             $stelling = $this->conndb->prepare(
-                "INSERT INTO Users (name, surname, email, password, sout, type,api_key)
-                VALUES (?, ?, ?, ?, ?, ?, ?)"
+                "INSERT INTO Users (name, surname, email, password, sout, type,api_key,cart_amount)
+                VALUES (?, ?, ?, ?, ?, ?, ?,?)"
             );
-            $stelling->bind_param("sssssss",
+            $stelling->bind_param("sssssssi",
                 $data['name'],
                 $data['surname'],
                 $data['email'],
                 $hashed_pw,
                 $sout,
                 $data['user_type'],
-                $FF_key
+                $FF_key,$amt
             );
             $stelling->execute();
 
