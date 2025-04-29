@@ -66,7 +66,7 @@ class FF_API
 
         try {
 
-            $stelling = $this->conndb->prepare("SELECT password, sout, api_key, name FROM Users WHERE email = ?");
+            $stelling = $this->conndb->prepare("SELECT password, sout, api_key, name,cart_amount FROM Users WHERE email = ?");
             $stelling->bind_param("s", $email);
             $stelling->execute();
             $resultaat = $stelling->get_result();
@@ -77,7 +77,7 @@ class FF_API
 
                 if ($hpw === $userData['password']) {
                     $stelling->close();
-                    $this->response(true, "", [["apikey" => $userData['api_key'], "username" => $userData['name']]], 200);
+                    $this->response(true, "", [["apikey" => $userData['api_key'], "username" => $userData['name'],"amount"=>$userData["cart_amount"]]], 200);
                     return;
                 }
             }
