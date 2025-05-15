@@ -1,0 +1,31 @@
+Customer buttons
+add to cart button,adds random products 
+
+with signature:
+{
+    "type": "cart",
+    "api_key": "7db20b3ff5a747e8969a95e232ffb4a9",
+    "product_id": "26",
+    "action":"add"
+}
+
+order button(only appears after add to cart was pressed)
+signature:
+{
+    "type": "order",
+    "api_key": "943e95c25969a764af7c46de88194421",
+    "destination_latitude":"25.7472",
+    "destination_longitude":"28.2511"
+}
+
+view order button
+
+shows all orders of that specific client
+
+signature:
+{
+    "type": "getorders",
+    "api_key": "943e95c25969a764af7c46de88194421"
+}
+
+(add button where they can only pick orders with state 'storage'->then update to state'out_for_delivery')

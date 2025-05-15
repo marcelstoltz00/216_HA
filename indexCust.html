@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Socket.IO Test Client (Focused)</title>
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background-color: #f9f9f9; }
+        .container { background-color: #fff; padding: 15px; border-radius: 5px; box-shadow: 0 0 8px rgba(0,0,0,0.1); }
+        h3 { margin-top: 0; }
+        input[type="text"], input[type="password"], input[type="email"] {
+            width: calc(100% - 20px); padding: 8px; margin-bottom: 8px; border: 1px solid #ccc; border-radius: 3px;
+        }
+        button {
+            background-color: #007bff; color: white; padding: 8px 12px; border: none;
+            border-radius: 3px; cursor: pointer; margin-right: 5px; margin-bottom: 5px;
+        }
+        button:hover { background-color: #0056b3; }
+        #logArea {
+            margin-top: 15px; padding: 10px; border: 1px solid #ddd; background-color: #f0f0f0;
+            height: 250px; overflow-y: auto; border-radius: 3px; white-space: pre-wrap; font-size: 0.9em;
+        }
+        .section { margin-bottom: 15px; padding-bottom: 10px; border-bottom: 1px solid #eee; }
+        .hidden { display: none; }
+        #connectionStatus { font-weight: bold; margin-bottom: 10px; display: block;}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <span id="connectionStatus">Attempting to connect...</span>
+
+        <div class="section" id="authSection">
+            <h3>Authentication</h3>
+            <input type="email" id="email" placeholder="Email (e.g., customer@example.com)" value="Cust1@gmail.com">
+            <input type="password" id="password" placeholder="Password" value="Need4Speed@!!">
+            <button id="loginButton">Login</button>
+        </div>
+
+        <div class="section hidden" id="customerActionsSection">
+            <h3>Customer Actions</h3>
+            <button id="getMyOrdersButton">Get My Orders</button>
+            <hr style="margin: 10px 0;">
+            <h4>Request Delivery</h4>
+            <input type="text" id="trackingNum" placeholder="Tracking Number">
+            <button id="requestDeliveryButton">Request Delivery</button>
+        </div>
+
+        <h3>Server/Event Log</h3>
+        <div id="logArea"></div>
+    </div>
+
+    <script>
+        // IMPORTANT: Change this URL if your Socket.IO server is not running on http://localhost:3000
+        const SOCKET_SERVER_URL = 'http://localhost:1300';
+        let socket;
+        let currentUserType = null; // Store 'Customer', 'Courier', etc. after login
+
+        const connectionStatusEl = document.getElementById('connectionStatus');
+        const logArea = document.getElementById('logArea');
+
+        const authSection = document.getElementById('authSection');
+        const customerActionsSection = document.getElementById('customerActionsSection');
+
+        const emailInput = document.getElementById('email');
+        const passwordInput = document.getElementById('password');
+        const loginButton = document.getElementById('loginButton');
+
+        const getMyOrdersButton = document.getElementById('getMyOrdersButton');
+        const trackingNumInput = document.getElementById('trackingNum');
+        const requestDeliveryButton = document.getElementById('requestDeliveryButton');
+
+        function logMessage(message, type = 'info') {
+            const time = new Date().toLocaleTimeString();
+            const entry = document.createElement('div');
+            const messageContent = typeof message === 'object' ? JSON.stringify(message, null, 2) : message;
+            entry.textContent = `[${time}] ${type.toUpperCase()}: ${messageContent}`;
+            if (type === 'error') entry.style.color = 'red';
+            if (type === 'success') entry.style.color = 'green';
+            logArea.appendChild(entry);
+            logArea.scrollTop = logArea.scrollHeight;
+        }
+
+        function updateUIVisibility() {
+            if (currentUserType) { // If any user is logged in
+                authSection.classList.add('hidden'); // Hide auth section
+                if (currentUserType === 'Customer') {
+                    customerActionsSection.classList.remove('hidden');
+                } else {
+                    customerActionsSection.classList.add('hidden');
+                    // If you had a courier-specific section, you'd show it here:
+                    // if (currentUserType === 'Courier') { courierActionsSection.classList.remove('hidden'); }
+                }
+            } else { // No user logged in (or logged out)
+                authSection.classList.remove('hidden');
+                customerActionsSection.classList.add('hidden');
+            }
+        }
+
+        function connectSocket() {
+            logMessage(`Connecting to ${SOCKET_SERVER_URL}...`);
+            // Ensure previous socket is disconnected if any, to avoid multiple connections
+            if (socket) {
+                socket.disconnect();
+            }
+            socket = io(SOCKET_SERVER_URL, { transports: ['websocket'] });
+
+            socket.on('connect', () => {
+                connectionStatusEl.textContent = `Connected to Server (ID: ${socket.id})`;
+                connectionStatusEl.style.color = 'green';
+                logMessage(`Connected. Socket ID: ${socket.id}`, 'success');
+                currentUserType = null; 
+                updateUIVisibility();
+            });
+
+            socket.on('disconnect', (reason) => {
+                connectionStatusEl.textContent = `Disconnected (${reason})`;
+                connectionStatusEl.style.color = 'red';
+                logMessage(`Disconnected: ${reason}`, 'error');
+                currentUserType = null;
+                updateUIVisibility();
+            });
+
+            socket.on('connect_error', (error) => {
+                connectionStatusEl.textContent = 'Connection Failed';
+                connectionStatusEl.style.color = 'red';
+                logMessage(`Connection Error: ${error.message || error}`, 'error');
+            });
+
+            // --- Authentication Listeners ---
+            socket.on('login_success', (data) => {
+                logMessage('Login successful!', 'success');
+                logMessage(data);
+                // Expecting data.userType from server based on your server's login_success emit
+                currentUserType = data.userType; 
+                updateUIVisibility();
+            });
+
+            socket.on('login_error', (data) => {
+                logMessage(`Login error: ${data.message || JSON.stringify(data)}`, 'error');
+                currentUserType = null;
+                updateUIVisibility();
+            });
+
+            // --- Customer Event Listeners ---
+            socket.on('my_orders_list', (data) => {
+                logMessage('Received "my_orders_list":', 'info');
+                logMessage(data);
+            });
+
+            socket.on('delivery_request_acknowledged', (data) => {
+                logMessage('Received "delivery_request_acknowledged":', 'success');
+                logMessage(data);
+            });
+
+            socket.on('customer_action_error', (data) => {
+                logMessage(`Received "customer_action_error": ${data.message || JSON.stringify(data)}`, 'error');
+                logMessage(data);
+            });
+        }
+
+        // --- Event Emitters ---
+        loginButton.addEventListener('click', () => {
+            if (!socket || !socket.connected) {
+                logMessage('Not connected. Please wait for connection or check server.', 'error');
+                if (!socket || socket.disconnected) connectSocket(); // Attempt to reconnect if fully disconnected
+                return;
+            }
+            const email = emailInput.value.trim();
+            const password = passwordInput.value.trim();
+            if (!email || !password) {
+                logMessage('Email and password are required.', 'error');
+                return;
+            }
+            logMessage(`Emitting "authenticate" for: ${email}`);
+            socket.emit('authenticate', { email, password });
+        });
+
+        getMyOrdersButton.addEventListener('click', () => {
+            if (!socket || !socket.connected || currentUserType !== 'Customer') {
+                logMessage('Must be logged in as a Customer to get orders.', 'error');
+                return;
+            }
+            logMessage('Emitting "customer_get_my_orders"...');
+            socket.emit('customer_get_my_orders');
+        });
+
+        requestDeliveryButton.addEventListener('click', () => {
+            if (!socket || !socket.connected || currentUserType !== 'Customer') {
+                logMessage('Must be logged in as a Customer to request delivery.', 'error');
+                return;
+            }
+            const trackingNum = trackingNumInput.value.trim();
+            if (!trackingNum) {
+                logMessage('Tracking number is required.', 'error');
+                return;
+            }
+            logMessage(`Emitting "customer_request_delivery" for: ${trackingNum}`);
+            socket.emit('customer_request_delivery', { trackingNum });
+        });
+
+        // Initial setup
+        document.addEventListener('DOMContentLoaded', () => {
+            connectSocket();
+            // updateUIVisibility is called within socket.on('connect') and after login attempts
+        });
+    </script>
+</body>
+</html>
